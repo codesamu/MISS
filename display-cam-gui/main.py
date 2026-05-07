@@ -318,6 +318,7 @@ class SmartBinApp:
             TouchButton(ox,                oy, BW, BH, "Foto aufnehmen", bg=C_PRIMARY),
             TouchButton(ox + BW + GAP,     oy, BW, BH, "Statistiken",    bg=C_SUCCESS),
             TouchButton(ox + 2*(BW + GAP), oy, BW, BH, "Einstellungen",  bg=C_MUTED),
+            TouchButton(ox, oy + BH + GAP, total_w, 42, "Beenden",       bg=C_DANGER),
         ]
         for btn in buttons:
             btn.draw(img)
@@ -330,6 +331,8 @@ class SmartBinApp:
             self.show_stats()
         elif idx == 2:
             self.show_settings()
+        elif idx == 3:
+            raise KeyboardInterrupt()
 
     # --------------------------------------------------
     # Kamera  –  MJPEG-Livestream via rpicam-vid
