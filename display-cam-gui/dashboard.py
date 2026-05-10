@@ -167,6 +167,12 @@ class DashboardApp:
         self.touch.close()
         del self.lcd
         del self.touch
+        
+        # Force reset pins using system pinctrl utility if available
+        for pin in [27, 25, 18, 17, 4]:
+            try: subprocess.run(["pinctrl", "set", str(pin), "op", "dl"], check=False)
+            except: pass
+            
         time.sleep(0.5) # Give OS time to release pins
         
         try:

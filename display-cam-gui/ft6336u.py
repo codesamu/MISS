@@ -96,8 +96,8 @@ class ft6336u():
         print("DEBUG: Closing ft6336u hardware...")
         try:
             if hasattr(self, 'GPIO_TP_INT'): self.GPIO_TP_INT.close()
-            # TP_RST was setup via RPi.GPIO
-            self.GPIO.cleanup(TP_RST)
+            # Nuclear cleanup: reset all pins used by this process
+            self.GPIO.cleanup()
             print("DEBUG: ft6336u hardware closed successfully.")
         except Exception as e:
             print(f"DEBUG: Error closing ft6336u: {e}")

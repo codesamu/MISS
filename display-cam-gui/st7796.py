@@ -31,6 +31,7 @@ class st7796():
         self.RPIO.setup(DC_PIN, self.RPIO.OUT, initial=self.RPIO.HIGH)
         print("DEBUG: DC OK")
         self.RPIO.setup(BL_PIN, self.RPIO.OUT)
+        time.sleep(0.1) # Small delay to ensure allocation
         self.BL_PWM = self.RPIO.PWM(BL_PIN, BL_Freq)
         self.BL_PWM.start(100)
         print("DEBUG: BL OK")
@@ -295,9 +296,8 @@ class st7796():
             if hasattr(self, 'BL_PWM'):
                 self.BL_PWM.stop()
             if hasattr(self, 'RPIO'):
-                self.RPIO.cleanup(RST_PIN)
-                self.RPIO.cleanup(DC_PIN)
-                self.RPIO.cleanup(BL_PIN)
+                # Nuclear cleanup: reset all pins used by this process
+                self.RPIO.cleanup()
             if self.SPI:
                 self.SPI.close()
             print("DEBUG: st7796 hardware closed successfully.")
