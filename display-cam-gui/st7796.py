@@ -30,9 +30,10 @@ class st7796():
         print("DEBUG: RST OK")
         self.RPIO.setup(DC_PIN, self.RPIO.OUT, initial=self.RPIO.HIGH)
         print("DEBUG: DC OK")
-        self.GPIO_BL_PIN  = PWMOutputDevice(BL_PIN,frequency = BL_Freq)
+        self.RPIO.setup(BL_PIN, self.RPIO.OUT)
+        self.BL_PWM = self.RPIO.PWM(BL_PIN, BL_Freq)
+        self.BL_PWM.start(100)
         print("DEBUG: BL OK")
-        self.bl_DutyCycle(100)
         #Initialize SPI
         self.SPI = spidev.SpiDev(0,0)
         self.SPI.max_speed_hz = SPI_Freq  
@@ -41,7 +42,7 @@ class st7796():
         self.lcd_init()
     
     def bl_DutyCycle(self, duty):                   # 设置 PWM 占空比
-        self.GPIO_BL_PIN.value = duty / 100
+        self.BL_PWM.ChangeDutyCycle(duty)
 
     
     
@@ -291,10 +292,12 @@ class st7796():
         """Release GPIO and SPI resources"""
         print("DEBUG: Closing st7796 hardware...")
         try:
-            if hasattr(self, 'GPIO_BL_PIN'): self.GPIO_BL_PIN.close()
+            if hasattr(self, 'BL_PWM'):
+                self.BL_PWM.stop()
             if hasattr(self, 'RPIO'):
                 self.RPIO.cleanup(RST_PIN)
                 self.RPIO.cleanup(DC_PIN)
+                self.RPIO.cleanup(BL_PIN)
             if self.SPI:
                 self.SPI.close()
             print("DEBUG: st7796 hardware closed successfully.")
