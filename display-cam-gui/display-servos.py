@@ -314,6 +314,8 @@ class ServoDisplayApp:
         finally:
             self.center_all()
             self.lcd.clear()
+            self.lcd.close()
+            self.touch.close()
 
 
 if __name__ == "__main__":

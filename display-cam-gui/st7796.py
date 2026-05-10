@@ -277,5 +277,16 @@ class st7796():
         self.digital_write(self.GPIO_DC_PIN,True)
         for i in range(0, len(_buffer), 4096):
             self.spi_writebyte(_buffer[i: i+4096])
+
+    def close(self):
+        """Release GPIO and SPI resources"""
+        try:
+            self.GPIO_RST_PIN.close()
+            self.GPIO_DC_PIN.close()
+            self.GPIO_BL_PIN.close()
+            if self.SPI:
+                self.SPI.close()
+        except Exception as e:
+            print(f"Error closing st7796: {e}")
     
     

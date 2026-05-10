@@ -89,6 +89,15 @@ class ft6336u():
         else:
             # 返回 0 和空坐标列表
             return 0 , []
+
+    def close(self):
+        """Release GPIO and I2C resources"""
+        try:
+            self.GPIO_TP_INT.close()
+            # TP_RST was setup via RPi.GPIO
+            self.GPIO.cleanup(TP_RST)
+        except Exception as e:
+            print(f"Error closing ft6336u: {e}")
     
     
         

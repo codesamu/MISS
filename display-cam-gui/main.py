@@ -748,6 +748,8 @@ class SmartBinApp:
             print("\nBeendet.")
         finally:
             self.lcd.clear()
+            self.lcd.close()
+            self.touch.close()
 
 
 # ========================================

@@ -162,6 +162,10 @@ class DashboardApp:
         # Clear screen before launching to indicate transition
         self.lcd.clear()
         
+        # RELEASE HARDWARE BEFORE LAUNCHING
+        self.lcd.close()
+        self.touch.close()
+        
         try:
             # Run the script and wait for it to finish
             subprocess.run(["python3", str(script_path)], check=False)
@@ -169,8 +173,15 @@ class DashboardApp:
             print(f"Error launching {script_name}: {e}")
         
         print(f"{script_name} finished. Returning to dashboard.")
-        # Re-clear if needed or just redraw
-        self.lcd.clear()
+        
+        # RE-INITIALIZE HARDWARE
+        try:
+            self.lcd = st7796.st7796()
+            self.touch = ft6336u.ft6336u()
+            self.lcd.clear()
+        except Exception as e:
+            print(f"Error re-initializing hardware: {e}")
+            sys.exit(1)
 
     def run(self):
         try:
