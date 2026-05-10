@@ -293,8 +293,12 @@ class st7796():
         """Release GPIO and SPI resources"""
         print("DEBUG: Closing st7796 hardware...")
         try:
-            if hasattr(self, 'BL_PWM'):
-                self.BL_PWM.stop()
+            if hasattr(self, 'BL_PWM') and self.BL_PWM is not None:
+                try:
+                    self.BL_PWM.stop()
+                except:
+                    pass
+                self.BL_PWM = None
             if hasattr(self, 'RPIO'):
                 # Nuclear cleanup: reset all pins used by this process
                 self.RPIO.cleanup()

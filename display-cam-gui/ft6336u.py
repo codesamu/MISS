@@ -21,11 +21,10 @@ class ft6336u():
         self.GPIO.setwarnings(False)
         # #Initialize I2C
         self.I2C = smbus.SMBus(1)
-        # self.GPIO.setup(TP_INT, self.GPIO.IN,self.GPIO.PUD_UP)
         print(f"DEBUG: Initializing FT6336U pins: RST={TP_RST}, INT={TP_INT}")
         self.GPIO.setup(TP_RST, self.GPIO.OUT)
         print("DEBUG: TP_RST OK")
-        self.GPIO_TP_INT = Button(TP_INT)
+        self.GPIO.setup(TP_INT, self.GPIO.IN, pull_up_down=self.GPIO.PUD_UP)
         print("DEBUG: TP_INT OK")
         # self.GPIO_TP_RST = DigitalOutputDevice(TP_RST,active_high = True,initial_value =True)   # 使用GPIO Zero库中的DigitalOutputDevice类
         # self.GPIO_TP_INT.when_pressed = self.Int_Callback  # 中断函数
@@ -95,7 +94,6 @@ class ft6336u():
         """Release GPIO and I2C resources"""
         print("DEBUG: Closing ft6336u hardware...")
         try:
-            if hasattr(self, 'GPIO_TP_INT'): self.GPIO_TP_INT.close()
             # Nuclear cleanup: reset all pins used by this process
             self.GPIO.cleanup()
             print("DEBUG: ft6336u hardware closed successfully.")
