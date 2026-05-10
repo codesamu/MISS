@@ -165,6 +165,9 @@ class DashboardApp:
         # RELEASE HARDWARE BEFORE LAUNCHING
         self.lcd.close()
         self.touch.close()
+        del self.lcd
+        del self.touch
+        time.sleep(0.5) # Give OS time to release pins
         
         try:
             # Run the script and wait for it to finish

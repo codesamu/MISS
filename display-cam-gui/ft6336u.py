@@ -22,10 +22,11 @@ class ft6336u():
         # #Initialize I2C
         self.I2C = smbus.SMBus(1)
         # self.GPIO.setup(TP_INT, self.GPIO.IN,self.GPIO.PUD_UP)
+        print(f"DEBUG: Initializing FT6336U pins: RST={TP_RST}, INT={TP_INT}")
         self.GPIO.setup(TP_RST, self.GPIO.OUT)
-        # self.GPIO.add_event_detect(TP_INT,self.GPIO.FALLING,self.Int_Callback,5) 
-        # pass
-        self.GPIO_TP_INT = Button(TP_INT)                                                  # 使用GPIO Zero库中的Button类
+        print("DEBUG: TP_RST OK")
+        self.GPIO_TP_INT = Button(TP_INT)
+        print("DEBUG: TP_INT OK")
         # self.GPIO_TP_RST = DigitalOutputDevice(TP_RST,active_high = True,initial_value =True)   # 使用GPIO Zero库中的DigitalOutputDevice类
         # self.GPIO_TP_INT.when_pressed = self.Int_Callback  # 中断函数
         
@@ -92,12 +93,14 @@ class ft6336u():
 
     def close(self):
         """Release GPIO and I2C resources"""
+        print("DEBUG: Closing ft6336u hardware...")
         try:
-            self.GPIO_TP_INT.close()
+            if hasattr(self, 'GPIO_TP_INT'): self.GPIO_TP_INT.close()
             # TP_RST was setup via RPi.GPIO
             self.GPIO.cleanup(TP_RST)
+            print("DEBUG: ft6336u hardware closed successfully.")
         except Exception as e:
-            print(f"Error closing ft6336u: {e}")
+            print(f"DEBUG: Error closing ft6336u: {e}")
     
     
         

@@ -20,10 +20,19 @@ class st7796():
         self.width  = 320
         self.height = 480 
         
-        self.GPIO_RST_PIN = DigitalOutputDevice(RST_PIN,active_high = True,initial_value =True)    # RST 设置为输出 参数：引脚，高电平有效，默认高          # 使用GPIO Zero库中的DigitalOutputDevice类
-        self.GPIO_DC_PIN  = DigitalOutputDevice(DC_PIN,active_high = True,initial_value =True)     # DC 设置为输出 参数：引脚，高电平有效，默认高           # 使用GPIO Zero库中的DigitalOutputDevice类
-        self.GPIO_BL_PIN  = PWMOutputDevice(BL_PIN,frequency = BL_Freq)                            # BL 设置为PWM  参数：引脚，PWM 频率                    # 使用GPIO Zero库中的PWMOutputDevice类
-        self.bl_DutyCycle(100)    
+        import RPi.GPIO as RPIO
+        self.RPIO = RPIO
+        self.RPIO.setmode(self.RPIO.BCM)
+        self.RPIO.setwarnings(False)
+        
+        print(f"DEBUG: Initializing ST7796 pins: RST={RST_PIN}, DC={DC_PIN}, BL={BL_PIN}")
+        self.RPIO.setup(RST_PIN, self.RPIO.OUT, initial=self.RPIO.HIGH)
+        print("DEBUG: RST OK")
+        self.RPIO.setup(DC_PIN, self.RPIO.OUT, initial=self.RPIO.HIGH)
+        print("DEBUG: DC OK")
+        self.GPIO_BL_PIN  = PWMOutputDevice(BL_PIN,frequency = BL_Freq)
+        print("DEBUG: BL OK")
+        self.bl_DutyCycle(100)
         #Initialize SPI
         self.SPI = spidev.SpiDev(0,0)
         self.SPI.max_speed_hz = SPI_Freq  
@@ -36,31 +45,31 @@ class st7796():
 
     
     
-    def digital_write(self, Pin, value):
+    def digital_write(self, Pin_Num, value):
         if value:
-            Pin.on()
+            self.RPIO.output(Pin_Num, self.RPIO.HIGH)
         else:
-            Pin.off()
+            self.RPIO.output(Pin_Num, self.RPIO.LOW)
             
     def spi_writebyte(self, data):
         if self.SPI!=None :
             self.SPI.writebytes(data)
     
     def command(self, cmd):
-        self.digital_write(self.GPIO_DC_PIN, False)
+        self.digital_write(DC_PIN, False)
         self.spi_writebyte([cmd])   
         
     def data(self, val):
-        self.digital_write(self.GPIO_DC_PIN, True)
+        self.digital_write(DC_PIN, True)
         self.spi_writebyte([val])  
         
     def reset(self):
         """Reset the display"""
-        self.digital_write(self.GPIO_RST_PIN,True)
+        self.digital_write(RST_PIN,True)
         time.sleep(0.01)
-        self.digital_write(self.GPIO_RST_PIN,False)
+        self.digital_write(RST_PIN,False)
         time.sleep(0.01)
-        self.digital_write(self.GPIO_RST_PIN,True)
+        self.digital_write(RST_PIN,True)
         time.sleep(0.01)
     
     def dre_rectangle(self, Xstart, Ystart, Xend, Yend, color):
@@ -228,7 +237,7 @@ class st7796():
             Yend = Yend + 1
             
         self.set_windows( Xstart, Ystart, Xend, Yend)
-        self.digital_write(self.GPIO_DC_PIN,True)
+        self.digital_write(DC_PIN,True)
         
         for i in range (Ystart,Yend):             
             Addr = ((Xstart) + (i * 240)) * 2        
@@ -250,7 +259,7 @@ class st7796():
             self.command(0x36)
             self.data(0xE8)   # MY=1, MX=1, MV=1, BGR=1 – Querformat korrekt
             self.set_windows(0, 0, self.height,self.width, 1)
-            self.digital_write(self.GPIO_DC_PIN,True)
+            self.digital_write(DC_PIN,True)
             for i in range(0,len(pix),4096):
                 self.spi_writebyte(pix[i:i+4096])
         else :
@@ -265,7 +274,7 @@ class st7796():
             self.command(0x36)
             self.data(0x48)         # Ändert von 0x08 zu 0x48
             self.set_windows(0, 0, self.width, self.height, 0)
-            self.digital_write(self.GPIO_DC_PIN,True)
+            self.digital_write(DC_PIN,True)
         for i in range(0, len(pix), 4096):
             self.spi_writebyte(pix[i: i+4096])
 
@@ -274,19 +283,22 @@ class st7796():
         """Clear contents of image buffer"""
         _buffer = [0xff] * (self.width*self.height*2)
         self.set_windows(0, 0, self.width, self.height)
-        self.digital_write(self.GPIO_DC_PIN,True)
+        self.digital_write(DC_PIN,True)
         for i in range(0, len(_buffer), 4096):
             self.spi_writebyte(_buffer[i: i+4096])
 
     def close(self):
         """Release GPIO and SPI resources"""
+        print("DEBUG: Closing st7796 hardware...")
         try:
-            self.GPIO_RST_PIN.close()
-            self.GPIO_DC_PIN.close()
-            self.GPIO_BL_PIN.close()
+            if hasattr(self, 'GPIO_BL_PIN'): self.GPIO_BL_PIN.close()
+            if hasattr(self, 'RPIO'):
+                self.RPIO.cleanup(RST_PIN)
+                self.RPIO.cleanup(DC_PIN)
             if self.SPI:
                 self.SPI.close()
+            print("DEBUG: st7796 hardware closed successfully.")
         except Exception as e:
-            print(f"Error closing st7796: {e}")
+            print(f"DEBUG: Error closing st7796: {e}")
     
     
