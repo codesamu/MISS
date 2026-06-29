@@ -1,7 +1,7 @@
 <div align="center">
 
-# 🗑️ SmartBin
-**An AI-Powered Waste Management System**
+# 🗑️ MISS
+**An AI-Powered Multi Item Sorting System**
 
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![YOLO](https://img.shields.io/badge/YOLO-v8-00FFFF?style=for-the-badge&logo=ultralytics&logoColor=black)
