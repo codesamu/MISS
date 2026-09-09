@@ -15,6 +15,7 @@ import ft6336u
 # ========================================
 
 APP_DIR = Path(__file__).resolve().parent
+PHOTO_CAPTURE_SCRIPT = APP_DIR.parent / "capture-photos" / "main.py"
 LCD_WIDTH = 480
 LCD_HEIGHT = 320
 HEADER_H = 46
@@ -131,15 +132,40 @@ class DashboardApp:
         draw = ImageDraw.Draw(img)
         draw.text((12, HEADER_H + 10), "Select application to start", font=FONT_SMALL, fill=C_MUTED)
 
-        BW, BH = 400, 70
-        ox = (LCD_WIDTH - BW) // 2
-        oy_start = HEADER_H + 40
-        gap = 20
+        margin = 16
+        gap = 10
+        half_width = (LCD_WIDTH - 2 * margin - gap) // 2
+        full_width = LCD_WIDTH - 2 * margin
+        top = HEADER_H + 37
+        app_height = 66
+        bottom_height = 42
 
         buttons = [
-            TouchButton(ox, oy_start, BW, BH, "Camera", bg=C_PRIMARY),
-            TouchButton(ox, oy_start + BH + gap, BW, BH, "Servo Control", bg=C_SUCCESS),
-            TouchButton(ox, oy_start + 2*(BH + gap), BW, 42, "Exit Dashboard", bg=C_DANGER),
+            TouchButton(margin, top, half_width, app_height, "Camera", bg=C_PRIMARY),
+            TouchButton(
+                margin + half_width + gap,
+                top,
+                half_width,
+                app_height,
+                "Servo Control",
+                bg=C_SUCCESS,
+            ),
+            TouchButton(
+                margin,
+                top + app_height + gap,
+                full_width,
+                app_height,
+                "Fotoaufnahme (5 s)",
+                bg=C_PRIMARY,
+            ),
+            TouchButton(
+                margin,
+                top + 2 * (app_height + gap),
+                full_width,
+                bottom_height,
+                "Exit Dashboard",
+                bg=C_DANGER,
+            ),
         ]
 
         for btn in buttons:
@@ -153,10 +179,14 @@ class DashboardApp:
         elif idx == 1:
             self.launch_script("display-servos.py")
         elif idx == 2:
+            self.launch_script(PHOTO_CAPTURE_SCRIPT)
+        elif idx == 3:
             raise KeyboardInterrupt()
 
     def launch_script(self, script_name):
-        script_path = APP_DIR / script_name
+        script_path = Path(script_name)
+        if not script_path.is_absolute():
+            script_path = APP_DIR / script_path
         print(f"Launching {script_path}...")
         
         # Clear screen before launching to indicate transition
