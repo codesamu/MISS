@@ -1,0 +1,6 @@
+path: "C:/Users/maxig/OneDrive/Desktop/smartbin/MISS/YOLO/runs/pet_s0xe5pm9/dataset"
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: PET
