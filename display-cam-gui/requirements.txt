@@ -1,0 +1,7 @@
+# Systempakete fuer GPIO, SPI und I2C aus der bestehenden Display-Installation.
+numpy<2
+# CPU-faehige aarch64-Wheels fuer diesen Raspberry Pi.
+torch==2.6.0
+torchvision==0.21.0
+opencv-python==4.11.0.86
+ultralytics>=8.4.0,<9

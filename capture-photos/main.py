@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import io
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -121,6 +122,7 @@ class MjpegCamera:
         self.process: subprocess.Popen[bytes] | None = None
         self.reader_thread: threading.Thread | None = None
         self.stop_event = threading.Event()
+        self._error_output: str | None = None
 
     def start(self) -> None:
         executable = shutil.which("rpicam-vid")
@@ -141,7 +143,7 @@ class MjpegCamera:
         self.process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
         )
         self.reader_thread = threading.Thread(
             target=self._read_frames,
@@ -211,6 +213,24 @@ class MjpegCamera:
     def failed(self) -> bool:
         return self.process is not None and self.process.poll() is not None
 
+    def failure_reason(self) -> str:
+        """Return the useful tail of rpicam-vid's error output after a failure."""
+        if self._error_output is not None:
+            return self._error_output
+        if (
+            self.process is None
+            or self.process.poll() is None
+            or self.process.stderr is None
+        ):
+            return ""
+        output = self.process.stderr.read().decode("utf-8", errors="replace")
+        output = re.sub(r"\x1b\[[0-9;]*m", "", output)
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        error_lines = [line for line in lines if "ERROR" in line.upper()]
+        selected = error_lines[-3:] or lines[-3:]
+        self._error_output = " | ".join(selected)
+        return self._error_output
+
     def close(self) -> None:
         self.stop_event.set()
         if self.process is not None and self.process.poll() is None:
@@ -222,6 +242,11 @@ class MjpegCamera:
                 self.process.wait(timeout=3)
         if self.reader_thread is not None:
             self.reader_thread.join(timeout=1)
+        if self.process is not None:
+            if self.process.stdout is not None:
+                self.process.stdout.close()
+            if self.process.stderr is not None:
+                self.process.stderr.close()
 
 
 class PhotoCollectorApp:

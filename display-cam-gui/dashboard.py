@@ -153,10 +153,18 @@ class DashboardApp:
             TouchButton(
                 margin,
                 top + app_height + gap,
-                full_width,
+                half_width,
                 app_height,
                 "Fotoaufnahme (5 s)",
                 bg=C_PRIMARY,
+            ),
+            TouchButton(
+                margin + half_width + gap,
+                top + app_height + gap,
+                half_width,
+                app_height,
+                "Live-Erkennung",
+                bg=C_SUCCESS,
             ),
             TouchButton(
                 margin,
@@ -181,6 +189,8 @@ class DashboardApp:
         elif idx == 2:
             self.launch_script(PHOTO_CAPTURE_SCRIPT)
         elif idx == 3:
+            self.launch_script("live-detection.py")
+        elif idx == 4:
             raise KeyboardInterrupt()
 
     def launch_script(self, script_name):
@@ -207,7 +217,11 @@ class DashboardApp:
         
         try:
             # Run the script and wait for it to finish
-            subprocess.run(["python3", str(script_path)], check=False)
+            python = sys.executable
+            live_python = APP_DIR.parent / ".venv" / "bin" / "python"
+            if script_path.name == "live-detection.py" and live_python.exists():
+                python = str(live_python)
+            subprocess.run([python, str(script_path)], check=False)
         except Exception as e:
             print(f"Error launching {script_name}: {e}")
         
