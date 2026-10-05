@@ -93,7 +93,7 @@ class DetectionStabilizer:
 
     def update(self, confidence):
         threshold = self.keep_confidence if self.detected else self.enter_confidence
-        hit = confidence >= threshold
+        hit = confidence > 0 and confidence >= threshold
         if self.detected:
             self._misses = 0 if hit else self._misses + 1
             if self._misses >= self.release_frames:
@@ -109,26 +109,53 @@ class DetectionStabilizer:
         return self.detected
 
 
-def maximum_confidence(results):
-    scores = []
-    for result in results:
-        if result.boxes is not None:
-            scores.extend(float(box.conf.item()) for box in result.boxes)
-    return max(scores, default=0.0)
+class MultiClassStabilizer:
+    """Jede Klasse unabhaengig bestaetigen und wieder freigeben."""
+
+    def __init__(self, *settings):
+        self.settings = settings
+        self.states = {}
+
+    def update(self, results):
+        scores = {}
+        for result in results:
+            if result.boxes is not None:
+                for box in result.boxes:
+                    name = result.names[int(box.cls.item())].strip()
+                    scores[name] = max(scores.get(name, 0.0), float(box.conf.item()))
+        for name in scores:
+            if name not in self.states:
+                self.states[name] = DetectionStabilizer(*self.settings)
+        return {
+            name: scores.get(name, 0.0)
+            for name, state in self.states.items()
+            if state.update(scores.get(name, 0.0))
+        }
 
 
-def draw_status(draw, detected, confidence, font):
-    text = "PET erkannt" if detected else "Kein PET erkannt"
-    if confidence > 0:
-        text += f" | {confidence:.0%}"
-    bounds = draw.textbbox((0, 0), text, font=font)
-    width = bounds[2] - bounds[0] + 18
-    fill = "#168a4c" if detected else "#343943"
-    draw.rounded_rectangle((6, 5, 6 + width, 31), radius=6, fill=fill)
-    draw.text((15, 9), text, fill="white", font=font)
+def fit_text(draw, text, font, width):
+    if draw.textlength(text, font=font) <= width:
+        return text
+    while text and draw.textlength(text + "...", font=font) > width:
+        text = text[:-1]
+    return text + "..."
 
 
-def render(frame, results, box_confidence, detected, confidence, fps, font):
+def draw_status(draw, active, font):
+    lines = [f"{name} erkannt" + (f" | {score:.0%}" if score > 0 else "")
+             for name, score in sorted(active.items())]
+    if len(lines) > 4:
+        lines = lines[:3] + [f"+ {len(lines) - 3} weitere Klassen erkannt"]
+    for index, text in enumerate(lines or ["Kein Objekt erkannt"]):
+        text = fit_text(draw, text, font, WIDTH - 36)
+        y = 5 + index * 28
+        width = draw.textlength(text, font=font) + 18
+        fill = "#168a4c" if active else "#343943"
+        draw.rounded_rectangle((6, y, 6 + width, y + 26), radius=6, fill=fill)
+        draw.text((15, y + 4), text, fill="white", font=font)
+
+
+def render(frame, results, box_confidence, active, fps, font):
     """Boxen zum selben Kamerabild zeichnen, einschliesslich Letterbox-Versatz."""
     screen = Image.new("RGB", (WIDTH, HEIGHT), "black")
     preview = ImageOps.contain(frame, (WIDTH, HEIGHT - BAR_HEIGHT))
@@ -137,21 +164,25 @@ def render(frame, results, box_confidence, detected, confidence, fps, font):
     screen.paste(preview, (ox, oy))
     draw = ImageDraw.Draw(screen)
     sx, sy = preview.width / frame.width, preview.height / frame.height
-    for index, result in enumerate(results):
-        color = COLORS[index % len(COLORS)]
+    names = sorted({name.strip() for result in results for name in (
+        result.names.values() if isinstance(result.names, dict) else result.names
+    )})
+    colors = {name: COLORS[index % len(COLORS)] for index, name in enumerate(names)}
+    for result in results:
         if result.boxes is not None:
             for box in result.boxes:
                 score = float(box.conf.item())
                 if score < box_confidence:
                     continue
+                name = result.names[int(box.cls.item())].strip()
+                color = colors[name]
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 coords = (ox + x1 * sx, oy + y1 * sy,
                           ox + x2 * sx, oy + y2 * sy)
                 draw.rectangle(coords, outline=color, width=2)
-                name = result.names[int(box.cls.item())]
                 label(draw, (coords[0], max(0, coords[1] - 20)),
                       f"{name} {score:.0%}", color, font)
-    draw_status(draw, detected, confidence, font)
+    draw_status(draw, active, font)
     draw.rectangle((0, HEIGHT - BAR_HEIGHT, WIDTH, HEIGHT), fill="#181b22")
     draw.text((8, HEIGHT - BAR_HEIGHT + 8), f"Live | KI: {fps:.1f} FPS", font=font, fill="white")
     draw.rectangle((WIDTH - 100, HEIGHT - BAR_HEIGHT, WIDTH, HEIGHT), fill="#b52c32")
@@ -159,13 +190,68 @@ def render(frame, results, box_confidence, detected, confidence, fps, font):
     return screen
 
 
-def stop_touched(touch):
+def touch_position(touch):
     touch.read_touch_data()
     point, coords = touch.get_touch_xy() or (0, [])
     if not point or not coords:
-        return False
-    x, y = 479 - coords[0]["y"], 319 - coords[0]["x"]
-    return WIDTH - 100 <= x < WIDTH and HEIGHT - BAR_HEIGHT <= y < HEIGHT
+        return None
+    return 479 - coords[0]["y"], 319 - coords[0]["x"]
+
+
+def stop_touched(touch):
+    position = touch_position(touch)
+    return position is not None and (
+        WIDTH - 100 <= position[0] < WIDTH and HEIGHT - BAR_HEIGHT <= position[1] < HEIGHT
+    )
+
+
+def model_title(path):
+    if path.parent.name == "weights":
+        run = path.parent.parent
+        if run.name == "train" and run.parent.name not in ("detect", "runs"):
+            run = run.parent
+        return f"{run.name} / {path.name}"
+    return f"{path.name} (Modellkopie)"
+
+
+def choose_model(lcd, touch, paths, font):
+    """Vier Modelle pro Seite; erst ein neuer Fingerdruck waehlt aus."""
+    page = 0
+    pages = (len(paths) + 3) // 4
+    pressed = True  # Den Start-Tipp aus dem Dashboard nicht uebernehmen.
+    redraw = True
+    while True:
+        if redraw:
+            screen = Image.new("RGB", (WIDTH, HEIGHT), "#181b22")
+            draw = ImageDraw.Draw(screen)
+            draw.text((12, 12), f"Modell waehlen ({page + 1}/{pages})", font=font, fill="white")
+            for row, path in enumerate(paths[page * 4:page * 4 + 4]):
+                y = 48 + row * 55
+                draw.rounded_rectangle((8, y, WIDTH - 8, y + 48), radius=5, fill="#343943")
+                text = fit_text(draw, model_title(path), font, WIDTH - 36)
+                draw.text((18, y + 14), text, font=font, fill="white")
+            for x, text in ((12, "Zurueck"), (175, "Weiter"), (365, "Abbrechen")):
+                draw.text((x, 290), text, font=font, fill="white")
+            lcd.show_image(screen)
+            redraw = False
+        position = touch_position(touch)
+        if position is not None and not pressed:
+            x, y = position
+            if 8 <= x < WIDTH - 8 and 48 <= y < 268:
+                row, offset = divmod(y - 48, 55)
+                index = page * 4 + row
+                if offset < 48 and index < len(paths):
+                    return paths[index]
+            elif HEIGHT - BAR_HEIGHT <= y < HEIGHT:
+                if x >= 350:
+                    return None
+                if x < 160:
+                    page = max(0, page - 1)
+                else:
+                    page = min(pages - 1, page + 1)
+                redraw = True
+        pressed = position is not None
+        time.sleep(0.03)
 
 
 def parse_args():
@@ -211,7 +297,7 @@ def main():
         for path in available:
             print(path.relative_to(ROOT))
         return 0
-    paths = args.model or available[:1]
+    paths = args.model or available
     if not paths:
         raise RuntimeError(
             "Kein trainiertes Detection-Modell gefunden. Zuerst 'python YOLO/train.py' "
@@ -228,21 +314,8 @@ def main():
     import ft6336u
 
     torch.set_num_threads(4)
-    models = []
-    for path in paths:
-        model = YOLO(str(path.resolve()))
-        if model.task != "detect":
-            raise RuntimeError(
-                f"{path}: Aufgabe ist '{model.task}', benoetigt wird 'detect'. "
-                "Ein Klassifikationsmodell kann keine Bounding Boxes liefern."
-            )
-        print(f"Modell: {path} ({model.task})", flush=True)
-        models.append(model)
-
-    # Die angeschlossene OV5647 liefert mit 10 FPS keine Frames; 30 FPS sind getestet.
-    camera = camera_class()(width=640, height=480, framerate=30, sensor_mode="1296:972:10")
     font = load_font()
-    state = DetectionStabilizer(
+    state = MultiClassStabilizer(
         args.conf, args.keep_conf, args.confirm_frames, args.release_frames
     )
     with ExitStack() as resources:
@@ -251,6 +324,27 @@ def main():
         lcd = st7796.st7796()
         # PWM stoppen, bevor der Touch-Treiber die gemeinsam genutzten GPIOs freigibt.
         resources.callback(lcd.close)
+        if not args.model:
+            selected = choose_model(lcd, touch, available, font)
+            if selected is None:
+                return 0
+            paths = [selected]
+        loading = Image.new("RGB", (WIDTH, HEIGHT), "black")
+        ImageDraw.Draw(loading).text((20, 140), "Modell wird geladen ...", font=font, fill="white")
+        lcd.show_image(loading)
+        models = []
+        for path in paths:
+            model = YOLO(str(path.resolve()))
+            if model.task != "detect":
+                raise RuntimeError(
+                    f"{path}: Aufgabe ist '{model.task}', benoetigt wird 'detect'. "
+                    "Ein Klassifikationsmodell kann keine Bounding Boxes liefern."
+                )
+            print(f"Modell: {path} | Klassen: {model.names}", flush=True)
+            models.append(model)
+
+        # Die angeschlossene OV5647 liefert mit 10 FPS keine Frames; 30 FPS sind getestet.
+        camera = camera_class()(width=640, height=480, framerate=30, sensor_mode="1296:972:10")
         resources.callback(camera.close)
         loading = Image.new("RGB", (WIDTH, HEIGHT), "black")
         ImageDraw.Draw(loading).text((20, 140), "Kamera startet ...", font=font, fill="white")
@@ -283,12 +377,11 @@ def main():
                               device="cpu", verbose=False, save=False)[0]
                 for model in models
             ]
-            confidence = maximum_confidence(results)
-            detected = state.update(confidence)
+            active = state.update(results)
             fps = 1 / max(time.monotonic() - start, 0.001)
             lcd.show_image(
                 render(
-                    source, results, args.keep_conf, detected, confidence, fps, font
+                    source, results, args.keep_conf, active, fps, font
                 )
             )
             last_frame = time.monotonic()
