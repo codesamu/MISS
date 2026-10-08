@@ -1,4 +1,36 @@
-# PET-Flaschen trainieren
+# Plastikflaschen und Aludosen trainieren
+
+## Neuen Datensatz wieder zusammenfuehren
+
+Wenn der COCO-Export bereits in `dataset/train`, `dataset/valid` (oder `val`)
+und `dataset/test` aufgeteilt ist, im Ordner `YOLO` ausfuehren:
+
+```powershell
+python merge_dataset.py
+```
+
+Das Programm kopiert alle Bilder nach `dataset/PET` und erstellt dort eine
+gemeinsame `_annotations.coco.json`. Bild- und Markierungs-IDs werden eindeutig
+neu vergeben; die Zuordnung der Markierungen zu ihren Bildern bleibt erhalten.
+Dateinamen bekommen den bisherigen Split als Praefix, etwa `train_bild.jpg`.
+Boxen, Klassen, Lizenzen und weitere Metadaten bleiben erhalten.
+
+Der neue Export enthaelt 1741 Bilder und 4478 Markierungen fuer Plastikflaschen
+(`plastic-bottle`) und Aludosen (` aluminum-can`). Der Zielordner heisst wie
+bisher `PET`, enthaelt aber **beide Klassen**. Die urspruenglichen Teilmengen
+werden nicht geloescht. Ein vorhandener Zielordner wird nicht ueberschrieben.
+Das Skript benoetigt nur Python, keine zusaetzlichen Bibliotheken.
+
+Andere Ordner lassen sich so angeben:
+
+```powershell
+python merge_dataset.py --source "pfad/zum/export" --output "pfad/zum/gesamt"
+```
+
+Die Zusammenfuehrung hebt die bisherige Trennung der Testdaten auf. Ein spaeterer
+neuer Split ist deshalb eine neue Versuchsaufteilung.
+
+## Training starten
 
 Im Terminal im Ordner `YOLO` ausfuehren:
 
@@ -16,6 +48,8 @@ Beim ersten Training wird das vortrainierte Modell heruntergeladen.
 Das fertige Modell liegt unter `YOLO/pet.pt` (wird beim naechsten Training
 ersetzt). Jeder Aufruf legt einen eigenen Ordner unter `YOLO/runs/` fuer
 Datenkopien und Ergebnisse an. Die Originaldaten bleiben erhalten.
+Der Modellname `pet.pt` bleibt aus Kompatibilitaetsgruenden bestehen;
+das neu trainierte Modell erkennt beide Klassen.
 
 Optional:
 
@@ -36,9 +70,16 @@ Training und Auswertung verwenden die [Ultralytics-API](https://docs.ultralytics
 
 ## Dataset und Vorbereitung
 
-Das vorhandene Dataset enthaelt 744 Bilder und 3395 markierte PET-Flaschen.
+Das zusammengefuehrte Dataset enthaelt 1741 Bilder und 4478 Markierungen.
 Die Markierungen stehen im COCO-Format in `_annotations.coco.json`.
-Die COCO-Kategorie `PET` hat die ID 1; fuer YOLO wird daraus die Klasse 0.
+Das Training uebernimmt automatisch alle Klassen mit Markierungen und vergibt
+fortlaufende YOLO-Klassen-IDs. Leerzeichen am Rand der Klassennamen werden entfernt:
+
+| COCO-ID | YOLO-ID | Klasse |
+| --- | --- | --- |
+| 1 | 0 | `aluminum-can` (Aludose) |
+| 2 | 1 | `plastic-bottle` (Plastikflasche) |
+
 Die unbenutzte Oberkategorie `smartbin` wird nicht als Erkennungsklasse trainiert.
 
 Eine COCO-Box beschreibt `x, y, Breite, Hoehe` in Pixeln, wobei `x, y` die
@@ -49,11 +90,11 @@ Klasse Mittelpunkt_X Mittelpunkt_Y Breite Hoehe
 ```
 
 Alle vier Koordinaten werden durch die jeweilige Bildbreite bzw. Bildhoehe
-geteilt. Sie liegen damit zwischen 0 und 1. Fuer jede Flasche entsteht eine
-Zeile; Bilder ohne PET-Markierung erhalten eine leere Labeldatei.
+geteilt. Sie liegen damit zwischen 0 und 1. Fuer jedes markierte Objekt entsteht
+eine Zeile; Bilder ohne Markierung erhalten eine leere Labeldatei.
 
 Die Bilder werden nach ID sortiert und mit Seed 42 gemischt. Beim aktuellen
-Dataset entstehen 595 Trainingsbilder, 74 Validierungsbilder und 75 Testbilder.
+Dataset entstehen 1392 Trainingsbilder, 174 Validierungsbilder und 175 Testbilder.
 Der Rundungsrest geht in die Testmenge. Jedes Bild gehoert genau einer Menge an:
 
 | Teilmenge | Verwendung |
@@ -96,7 +137,7 @@ Jeder Lauf erhaelt unter `YOLO/runs/pet_.../` einen eigenen Ordner:
 pet_.../
   bericht.md           Zusammenfassung mit Einstellungen, Laufzeit und Metriken
   dataset/
-    data.yaml          Dataset-Pfad, Teilmengen und Klassenname
+    data.yaml          Dataset-Pfad, Teilmengen und Klassennamen
     images/            Bilder in train/, val/ und test/
     labels/            Passende YOLO-Labels in train/, val/ und test/
   train/
@@ -119,8 +160,8 @@ entsteht nur der vorbereitete Dataset-Ordner.
 
 | Metrik | Bedeutung |
 | --- | --- |
-| Precision | Welcher Anteil der erkannten Flaschen tatsaechlich korrekt ist; hoch bedeutet wenige Fehlalarme |
-| Recall | Welcher Anteil der markierten Flaschen gefunden wird; hoch bedeutet wenige uebersehene Flaschen |
+| Precision | Welcher Anteil der erkannten Objekte tatsaechlich korrekt ist; hoch bedeutet wenige Fehlalarme |
+| Recall | Welcher Anteil der markierten Objekte gefunden wird; hoch bedeutet wenige uebersehene Objekte |
 | mAP50 | Erkennungsqualitaet bei mindestens 50 % Ueberlappung (IoU) zwischen vorhergesagter und echter Box |
 | mAP50-95 | Mittlere Erkennungsqualitaet ueber IoU-Schwellen von 0,50 bis 0,95; bewertet die Genauigkeit der Boxen strenger |
 | Trainings-/Validierungsverlust | Fehlerfunktion beim Lernen bzw. Pruefen; kleinere Werte sind meist besser |
@@ -128,17 +169,18 @@ entsteht nur der vorbereitete Dataset-Ordner.
 Precision, Recall und mAP liegen zwischen 0 und 1; groessere Werte sind besser.
 Sinkender Trainingsverlust bei schlechter werdender Validierung kann auf
 Ueberanpassung hinweisen. Zusaetzlich immer einige Vorhersagebilder anschauen:
-Werden Flaschen uebersehen, doppelt markiert oder andere Gegenstaende erkannt?
+Werden Flaschen oder Dosen uebersehen, verwechselt, doppelt markiert oder andere Gegenstaende erkannt?
 
 ## Grenzen der Auswertung
 
 Der einfache Split mischt einzelne Bilder. Sehr aehnliche Bilder aus derselben
 Aufnahmeserie koennen dadurch in verschiedenen Teilmengen landen und Ergebnisse
 zu gut erscheinen lassen. Fuer eine belastbare Beurteilung spaeter mit neuen
-Aufnahmeserien, anderen Lichtverhaeltnissen und anderen Flaschen testen.
+Aufnahmeserien, anderen Lichtverhaeltnissen und anderen Flaschen und Dosen testen.
 
-Das Modell lernt nur die Klasse PET. Fuer den Einsatz im Smartbin sind auch
-Testbilder mit anderem Muell und ohne Flaschen sinnvoll, um Fehlalarme zu messen.
+Das Modell lernt die Klassen Plastikflasche und Aludose. Fuer den Einsatz im
+Smartbin sind auch Testbilder mit anderem Muell und ohne diese Objekte sinnvoll,
+um Fehlalarme zu messen.
 Die Testmenge sollte fuer die abschliessende Beurteilung dienen; Einstellungen
 anhand der Validierung auswaehlen.
 

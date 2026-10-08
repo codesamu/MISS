@@ -1,4 +1,4 @@
-"""PET-Daten aufteilen, COCO-Boxen konvertieren und YOLO trainieren."""
+"""COCO-Daten aufteilen und YOLO fuer Flaschen und Dosen trainieren."""
 
 import argparse
 import json
@@ -15,7 +15,15 @@ SOURCE = BASE / "dataset" / "PET"
 
 def prepare_data():
     coco = json.loads((SOURCE / "_annotations.coco.json").read_text(encoding="utf-8"))
-    pet_id = next(c["id"] for c in coco["categories"] if c["name"] == "PET")
+    used_ids = {annotation["category_id"] for annotation in coco["annotations"]}
+    categories = sorted(
+        (category for category in coco["categories"] if category["id"] in used_ids),
+        key=lambda category: category["id"],
+    )
+    class_ids = {category["id"]: index for index, category in enumerate(categories)}
+    names = {index: category["name"].strip() for index, category in enumerate(categories)}
+    if not names or used_ids != set(class_ids):
+        raise ValueError("Keine gueltigen Klassen oder unbekannte Kategorie in den Markierungen.")
     images = sorted(coco["images"], key=lambda img: img["id"])
     if len(images) < 10:
         raise ValueError("Mindestens 10 Bilder fuer den 80/10/10-Split erforderlich.")
@@ -25,8 +33,7 @@ def prepare_data():
 
     annotations = defaultdict(list)
     for annotation in coco["annotations"]:
-        if annotation["category_id"] == pet_id:
-            annotations[annotation["image_id"]].append(annotation)
+        annotations[annotation["image_id"]].append(annotation)
 
     random.Random(42).shuffle(images)
     train_end = int(len(images) * 0.8)
@@ -56,7 +63,8 @@ def prepare_data():
                 width, height = img["width"], img["height"]
                 # COCO: linke obere Ecke; YOLO: normierter Mittelpunkt.
                 labels.append(
-                    f"0 {(x + w / 2) / width:.6f} {(y + h / 2) / height:.6f} "
+                    f"{class_ids[annotation['category_id']]} "
+                    f"{(x + w / 2) / width:.6f} {(y + h / 2) / height:.6f} "
                     f"{w / width:.6f} {h / height:.6f}"
                 )
             (label_dir / f"{img['id']}.txt").write_text(
@@ -68,11 +76,12 @@ def prepare_data():
     data_yaml.write_text(
         f"path: {json.dumps(dataset.as_posix())}\n"
         "train: images/train\nval: images/val\ntest: images/test\n"
-        "names:\n  0: PET\n",
+        "names:\n" + "".join(f"  {index}: {json.dumps(name)}\n" for index, name in names.items()),
         encoding="utf-8",
     )
     print(f"Daten: {data_yaml}")
-    return run, data_yaml
+    print(f"Klassen: {names}")
+    return run, data_yaml, names
 
 
 def main():
@@ -87,7 +96,7 @@ def main():
         import ultralytics
         from ultralytics import YOLO
 
-    run, data_yaml = prepare_data()
+    run, data_yaml, names = prepare_data()
     if args.split_only:
         return
 
@@ -105,10 +114,11 @@ def main():
         project=str(run), name="test",
     )
     report = [
-        "# Trainingsbericht PET\n",
+        "# Trainingsbericht Smartbin\n",
         f"- Ultralytics-Version: {ultralytics.__version__}",
         "- Startmodell: yolo26n.pt (vortrainiert)",
-        "- Aufgabe: Objekterkennung; Klasse 0 = PET",
+        "- Aufgabe: Objekterkennung",
+        "- Klassen: " + ", ".join(f"{index} = {name}" for index, name in names.items()),
         f"- Angeforderte Epochen: {args.epochs}",
         "- Bildgroesse: 640; Batch: 8; Workers: 0; Seed: 42",
         "- Aufteilung: 80 % Training / 10 % Validierung / 10 % Test",
