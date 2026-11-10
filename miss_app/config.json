@@ -1,0 +1,17 @@
+{
+  "model": "YOLO/pet.pt",
+  "plate": [0.18, 0.16, 0.82, 0.88],
+  "routes": {"plastic-bottle": "rf", "aluminum-can": "lf"},
+  "labels": {"plastic-bottle": "Plastikflasche", "aluminum-can": "Aludose"},
+  "presence_confidence": 0.25,
+  "sort_confidence": 0.6,
+  "stable_seconds": 1.0,
+  "stable_frames": 3,
+  "stable_iou": 0.85,
+  "clear_seconds": 0.5,
+  "feedback_seconds": 10.0,
+  "max_observation_age": 2.5,
+  "servo_settle_seconds": 0.7,
+  "drop_seconds": 1.0,
+  "show_plate": false
+}

@@ -5,3 +5,4 @@ test: images/test
 names:
   0: "aluminum-can"
   1: "plastic-bottle"
+den wir dann von den YOLO26 Modell

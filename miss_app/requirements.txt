@@ -1,0 +1,3 @@
+# Raspberry-Pi-Abhängigkeiten der bestehenden Live-Erkennung mitverwenden.
+-r ../display-cam-gui/requirements.txt
+Pillow>=10
