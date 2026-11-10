@@ -1,10 +1,11 @@
+
 #include <FastLED.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
-#include <BLE2902.h>
 
-// LED configuration
+// ---------------- LED SETTINGS ----------------
+
 #define LED_PIN 14
 #define NUM_LEDS 8
 #define LED_TYPE WS2812B
@@ -12,18 +13,23 @@
 
 CRGB leds[NUM_LEDS];
 
-// BLE configuration
-#define DEVICE_NAME "ESP32_LED"
-
-#define SERVICE_UUID        "12345678-1234-1234-1234-123456789abc"
-#define CHARACTERISTIC_UUID "abcdefab-1234-1234-1234-abcdefabcdef"
-
-// LED state
 bool ledState = false;
 CRGB currentColor = CRGB::White;
 
-// Update LEDs
+// ---------------- BLE SETTINGS ----------------
+
+#define DEVICE_NAME "ESP32_LED"
+
+#define SERVICE_UUID \
+"12345678-1234-1234-1234-123456789abc"
+
+#define CHARACTERISTIC_UUID \
+"abcdefab-1234-1234-1234-abcdefabcdef"
+
+// ---------------- LED CONTROL ----------------
+
 void updateLEDs() {
+
   if (ledState) {
     fill_solid(leds, NUM_LEDS, currentColor);
   } else {
@@ -33,39 +39,49 @@ void updateLEDs() {
   FastLED.show();
 }
 
-// BLE command handler
+// ---------------- BLE COMMANDS ----------------
+
 class CommandCallbacks : public BLECharacteristicCallbacks {
 
-  void onWrite(BLECharacteristic *pCharacteristic) {
+  void onWrite(BLECharacteristic *characteristic) override {
 
-    String command = pCharacteristic->getValue().c_str();
+    // Read incoming BLE command
+    String command = characteristic->getValue();
 
     command.trim();
     command.toUpperCase();
 
-    Serial.print("Received: ");
+    Serial.print("Received command: ");
     Serial.println(command);
 
+    // TURN ON
     if (command == "ON") {
 
       ledState = true;
       updateLEDs();
 
+      Serial.println("LEDs ON");
     }
 
+    // TURN OFF
     else if (command == "OFF") {
 
       ledState = false;
       updateLEDs();
 
+      Serial.println("LEDs OFF");
     }
 
+    // CHANGE COLOR
     else if (command.startsWith("COLOR")) {
 
       int r, g, b;
 
-      if (sscanf(command.c_str(), "COLOR %d %d %d", &r, &g, &b) == 3) {
+      if (sscanf(command.c_str(),
+                 "COLOR %d %d %d",
+                 &r, &g, &b) == 3) {
 
+        // Keep values between 0 and 255
         r = constrain(r, 0, 255);
         g = constrain(g, 0, 255);
         b = constrain(b, 0, 255);
@@ -75,56 +91,87 @@ class CommandCallbacks : public BLECharacteristicCallbacks {
         ledState = true;
         updateLEDs();
 
-        Serial.println("Color changed!");
+        Serial.printf(
+          "New RGB: %d, %d, %d\n",
+          r, g, b
+        );
+
+      } else {
+
+        Serial.println("Invalid color command!");
 
       }
+    }
+
+    else {
+
+      Serial.println("Unknown command!");
+
     }
   }
 };
 
+// ---------------- SETUP ----------------
+
 void setup() {
 
   Serial.begin(115200);
+  delay(1000);
 
-  // Initialize LEDs
-  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
+  Serial.println();
+  Serial.println("Starting ESP32 LED controller...");
+
+  // Initialize FastLED
+  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(
+    leds, NUM_LEDS
+  );
+
   FastLED.setBrightness(50);
 
-  ledState = false;
   updateLEDs();
+
+  Serial.println("FastLED initialized!");
 
   // Initialize Bluetooth
   BLEDevice::init(DEVICE_NAME);
 
-  BLEServer *pServer = BLEDevice::createServer();
+  BLEServer *server = BLEDevice::createServer();
 
-  BLEService *pService = pServer->createService(SERVICE_UUID);
+  BLEService *service =
+    server->createService(SERVICE_UUID);
 
-  BLECharacteristic *pCharacteristic =
-    pService->createCharacteristic(
+  BLECharacteristic *characteristic =
+    service->createCharacteristic(
       CHARACTERISTIC_UUID,
       BLECharacteristic::PROPERTY_READ |
       BLECharacteristic::PROPERTY_WRITE
     );
 
-  pCharacteristic->setCallbacks(new CommandCallbacks());
+  characteristic->setCallbacks(new CommandCallbacks());
 
-  pCharacteristic->setValue("Ready");
+  characteristic->setValue("Ready");
 
-  pService->start();
+  // Start BLE service
+  service->start();
 
-  // Start advertising
-  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  // Start Bluetooth advertising
+  BLEAdvertising *advertising =
+    BLEDevice::getAdvertising();
 
-  pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
+  advertising->addServiceUUID(SERVICE_UUID);
+  advertising->setScanResponse(true);
 
   BLEDevice::startAdvertising();
 
-  Serial.println("ESP32 BLE is ready!");
+  Serial.println("BLE initialized!");
+  Serial.println("Device name: ESP32_LED");
   Serial.println("Waiting for Raspberry Pi...");
 }
 
+// ---------------- LOOP ----------------
+
 void loop() {
+
   delay(100);
+
 }
