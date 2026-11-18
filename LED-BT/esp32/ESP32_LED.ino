@@ -161,6 +161,39 @@ void renderAnimation() {
   FastLED.show();
 }
 
+// ---------------- BLE CONNECTION ----------------
+
+// A connection and advertising exclude each other. The stack stops advertising
+// when a client connects, and it does NOT start again after that client leaves
+// - without the restart below the board is invisible until it is reset.
+//
+// Both calls happen here, in the Bluetooth task that owns them, and nowhere
+// else: starting advertising from loop() races with the stack and makes the
+// next connection fail.
+//
+// Nothing is printed in these callbacks: Serial output from the Bluetooth task
+// can block it and drop the link. loop() does the printing.
+volatile bool clientConnected = false;
+
+bool reportedConnected = false;   // last state printed by loop()
+
+class ServerCallbacks : public BLEServerCallbacks {
+
+  void onConnect(BLEServer *server) override {
+
+    clientConnected = true;
+
+    BLEDevice::stopAdvertising();
+  }
+
+  void onDisconnect(BLEServer *server) override {
+
+    clientConnected = false;
+
+    BLEDevice::startAdvertising();   // visible again for the next client
+  }
+};
+
 // ---------------- BLE COMMANDS ----------------
 
 class CommandCallbacks : public BLECharacteristicCallbacks {
@@ -324,6 +357,7 @@ void setup() {
   BLEDevice::init(DEVICE_NAME);
 
   BLEServer *server = BLEDevice::createServer();
+  server->setCallbacks(new ServerCallbacks());
 
   BLEService *service =
     server->createService(SERVICE_UUID);
@@ -349,6 +383,10 @@ void setup() {
   advertising->addServiceUUID(SERVICE_UUID);
   advertising->setScanResponse(true);
 
+  // Connection parameters macOS and iOS accept without dropping the link
+  advertising->setMinPreferred(0x06);
+  advertising->setMaxPreferred(0x12);
+
   BLEDevice::startAdvertising();
 
   Serial.println("BLE initialized!");
@@ -367,6 +405,15 @@ void setup() {
 
 void loop() {
 
+  // Connection log. Printing from loop() keeps the Bluetooth task free.
+  if (clientConnected != reportedConnected) {
+
+    reportedConnected = clientConnected;
+
+    Serial.println(reportedConnected ? "Client connected - ready for commands"
+                                     : "Client disconnected - advertising again");
+  }
+
   // Animations are drawn frame by frame here instead of in the
   // BLE callback, so a blocking effect can never stall Bluetooth.
   if (ledState && animation != ANIM_NONE) {
@@ -375,3 +422,4 @@ void loop() {
 
   delay(5);
 }
+

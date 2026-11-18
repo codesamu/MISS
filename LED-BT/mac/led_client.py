@@ -1,35 +1,33 @@
 #!/usr/bin/env python3
-"""Minimal LED control for the ESP32_LED strip, running on a Mac.
+"""Every command of the ESP32_LED strip, shown one after another on a Mac.
 
-Same building block as RaspberryPi/led_client.py, adjusted for macOS / macOS
-CoreBluetooth:
+Run it and watch the strip:
 
-    async with LedStrip() as strip:              # connect / disconnect
-        await strip.anim("WAVE", 0, 128, 255)    # start an effect
-        await asyncio.sleep(4)                   # let it run
-        await strip.color(255, 64, 0)            # one colour on the whole strip
+    python3 Mac/led_client.py              # the whole show, ~20 s
+    python3 Mac/led_client.py wave         # one step only
+    python3 Mac/led_client.py onoff paint  # several steps, in that order
 
-Running this file plays exactly that: a blue wave for a few seconds, then the
-whole strip in solid orange.
+Steps: same-color, pattern, onoff, wave, breathe, fallback, stop
+
+The BLE part (LedStrip) is the small reusable framework: connect once, then
+call the command methods. The demo functions below show what each command does:
+
+    strip.color(r, g, b)            all LEDs the same colour
+    strip.set_led(i, r, g, b)       one LED, so first red and second white ...
+    strip.on() / strip.off()        show / hide the last static picture
+    strip.anim("WAVE", r, g, b, ms) animation with colour and speed
+    strip.anim("BREATHE", ...)      the other animation
+    strip.stop()                    stop the animation, static picture returns
+    strip.send("ANIM WAVE")         raw command, missing values are reused
 
 macOS notes
 -----------
-* The Bluetooth "address" macOS reports is a CoreBluetooth UUID, not the MAC
-  address of the ESP32, and it differs per Mac. So the ESP32 is searched by its
-  advertised name "ESP32_LED". Pass --uuid only to skip the scan (the UUID must
-  be copied from a scan on this Mac, e.g. the one this script prints or
-  RaspberryPi/test_esp32_commands.py --list).
-* macOS asks once for Bluetooth permission. When the prompt appears, allow the
-  app you start Python from - Terminal, iTerm, or the IDE. If you denied it,
-  re-enable it under System Settings -> Privacy & Security -> Bluetooth.
-  Without permission the scan silently finds nothing or bleak raises
-  "not authorized".
-* The ESP32 serves one BLE connection at a time. Close any other client (the Pi,
-  phone app, nRF Connect) before running this.
-
-Commands sent (see ESP32_LED.ino):
-    ON | OFF | COLOR <r> <g> <b> | SET <led> <r> <g> <b>
-    ANIM WAVE|BREATHE <r> <g> <b> <ms> | STOP
+* The ESP32 is found by its advertised name "ESP32_LED". macOS shows a
+  CoreBluetooth UUID instead of a MAC address, so pass --uuid=<uuid> only with
+  a UUID printed by a scan on this Mac (see Mac/scan.py). It is not portable.
+* macOS wants Bluetooth permission for the app you start Python from
+  (Terminal, iTerm, IDE): System Settings -> Privacy & Security -> Bluetooth.
+* The ESP32 serves one BLE connection at a time - close other clients first.
 
 Python 3.9+, dependency: bleak.
 """
@@ -68,10 +66,8 @@ class LedStrip:
     # ---- connection ----
 
     async def connect(self):
-        device = None
-
         if self.uuid:
-            # CoreBluetooth UUID or "UUID:CoreBluetooth" as printed by a scan
+            # CoreBluetooth UUID, as printed by Mac/scan.py
             device = await BleakScanner.find_device_by_address(
                 self.uuid, timeout=SCAN_TIMEOUT
             )
@@ -96,14 +92,29 @@ class LedStrip:
 
         if self.client.services.get_characteristic(CHARACTERISTIC_UUID) is None:
             await self.client.disconnect()
+            self.client = None
             raise RuntimeError("Command characteristic not found - wrong firmware?")
 
         print("Connected")
 
     async def disconnect(self):
-        if self.client is not None and self.client.is_connected:
-            await self.client.disconnect()
-            print("Disconnected")
+        client = self.client
+        self.client = None
+
+        if client is None:
+            return
+
+        try:
+            if client.is_connected:
+                await client.disconnect()
+                print("Disconnected")
+        except Exception as error:
+            print(f"disconnect warning: {error}")
+
+        # macOS closes the link asynchronously. Exiting right away can leave
+        # the ESP32 waiting on a connection that is already gone, so it refuses
+        # the next client. A short pause lets the disconnect finish.
+        await asyncio.sleep(0.5)
 
     async def __aenter__(self):
         await self.connect()
@@ -140,9 +151,11 @@ class LedStrip:
         await self.send("OFF")
 
     async def color(self, r: int, g: int, b: int):
+        """One colour for the whole strip."""
         await self.send(f"COLOR {r} {g} {b}")
 
     async def set_led(self, index: int, r: int, g: int, b: int):
+        """One colour for one LED (0-7)."""
         await self.send(f"SET {index} {r} {g} {b}")
 
     async def anim(self, effect: str, r: int, g: int, b: int, frame_ms: int = 40):
@@ -178,28 +191,141 @@ class LedStrip:
         )
 
 
-# ---------------- DEMO ----------------
+# ---------------- DEMO STEPS ----------------
+
+# Colours used by the multi colour line: LED 0 red, LED 1 white, ...
+PATTERN = [
+    (255, 0, 0),      # 0 red
+    (255, 255, 255),  # 1 white
+    (0, 255, 0),      # 2 green
+    (0, 0, 255),      # 3 blue
+    (255, 255, 0),    # 4 yellow
+    (0, 255, 255),    # 5 cyan
+    (255, 0, 255),    # 6 magenta
+    (255, 64, 0),     # 7 orange
+]
 
 
-async def main():
-    uuid = next((a.split("=", 1)[1] for a in sys.argv[1:]
-                 if a.startswith(("--uuid=", "--address="))), "")
+async def step_same_color(strip: LedStrip):
+    """COLOR - every LED the same colour."""
 
+    print("all LEDs red")
+    await strip.color(255, 0, 0)
+    await asyncio.sleep(1.5)
+
+    print("all LEDs light blue")
+    await strip.color(0, 128, 255)
+    await asyncio.sleep(1.5)
+
+
+async def step_pattern(strip: LedStrip):
+    """SET - a different colour for each LED."""
+
+    print("one colour per LED: red, white, green, blue, yellow, cyan, magenta, orange")
+
+    for index, (r, g, b) in enumerate(PATTERN):
+        await strip.set_led(index, r, g, b)
+
+    await asyncio.sleep(2.0)
+
+
+async def step_onoff(strip: LedStrip):
+    """OFF and ON - the static picture stays stored while the strip is off."""
+
+    print("off - the saved picture disappears")
+    await strip.off()
+    await asyncio.sleep(1.5)
+
+    print("on - the saved picture comes back")
+    await strip.on()
+    await asyncio.sleep(1.5)
+
+
+async def step_wave(strip: LedStrip):
+    """ANIM WAVE - a crest of light running along the strip."""
+
+    print("wave in green, 40 ms per frame")
+    await strip.anim("WAVE", 100, 255, 50, 10)
+    await asyncio.sleep(3.0)
+
+
+async def step_breathe(strip: LedStrip):
+    """ANIM BREATHE - the whole strip fading up and down."""
+
+    print("breathe in blue, 25 ms per frame")
+    await strip.anim("BREATHE", 0, 0, 255, 5)
+    await asyncio.sleep(3.0)
+
+
+async def step_fallback(strip: LedStrip):
+    """ANIM without values - the ESP32 reuses the last colour and speed."""
+
+    print("ANIM WAVE without values keeps blue and 25 ms")
+    await strip.send("ANIM WAVE")
+    await asyncio.sleep(2.5)
+
+
+async def step_stop(strip: LedStrip):
+    """STOP - animation ends, the stored static picture comes back."""
+
+    print("stop - the animation freezes and the multi colour line returns")
+    await strip.stop()
+    await asyncio.sleep(2.0)
+
+    print("done, leaving the strip dark")
+    await strip.off()
+
+
+STEPS = {
+    "same-color": step_same_color,
+    "pattern": step_pattern,
+    "onoff": step_onoff,
+    "wave": step_wave,
+    "breathe": step_breathe,
+    "fallback": step_fallback,
+    "stop": step_stop,
+}
+
+ORDER = list(STEPS)
+
+
+# ---------------- RUN ----------------
+
+
+async def show(strip: LedStrip, names):
+    for name in names:
+        print(f"\n--- {name} ---")
+        await STEPS[name](strip)
+
+
+async def run(names, uuid: str = ""):
     async with LedStrip(uuid=uuid) as strip:
+        await show(strip, names)
 
-        print("wave for 4 s")
-        await strip.anim("WAVE", 0, 128, 255, 40)
-        await asyncio.sleep(4)
 
-        print("solid orange")
-        await strip.color(255, 64, 0)
-        await asyncio.sleep(2)
+def main():
+    args = sys.argv[1:]
+
+    uuid = next(
+        (a.split("=", 1)[1] for a in args
+         if a.startswith(("--uuid=", "--address="))),
+        "",
+    )
+
+    names = [a.lower() for a in args if not a.startswith("-")] or ORDER
+
+    unknown = [a for a in names if a not in STEPS]
+    if unknown:
+        sys.exit(f"Unknown step {unknown[0]!r}. Choose from: {', '.join(ORDER)}")
+
+    asyncio.run(run(names, uuid))
 
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        main()
     except KeyboardInterrupt:
         print("\nInterrupted.")
     except Exception as error:
         sys.exit(f"Error: {error}")
+
