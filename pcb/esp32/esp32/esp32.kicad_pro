@@ -489,7 +489,9 @@
   },
   "libraries": {
     "pinned_footprint_libs": [],
-    "pinned_symbol_libs": []
+    "pinned_symbol_libs": [
+      "PCM_InHouse_Libary"
+    ]
   },
   "meta": {
     "filename": "esp32.kicad_pro",
